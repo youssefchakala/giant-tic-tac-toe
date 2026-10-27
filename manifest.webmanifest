@@ -1,0 +1,17 @@
+{
+  "name": "Giant Tic-Tac-Toe",
+  "short_name": "Tic-Tac-Toe+",
+  "description": "Tic-tac-toe inside tic-tac-toe. Play on one phone, against the phone, or online with a friend.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4F7FB",
+  "theme_color": "#1D2940",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

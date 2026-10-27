@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Giant Tic-Tac-Toe</title>
+<meta name="description" content="Tic-tac-toe inside tic-tac-toe. Play on one phone, against the phone, or online with a friend.">
+<meta name="theme-color" content="#F4F7FB" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111823" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Shantell+Sans:wght@500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  /* Layout: one notebook page on graph paper. Status on top, the 9x9 board drawn in ink, controls underneath. */
+  :root {
+    color-scheme: light;
+    --paper: #F4F7FB;
+    --rule: #DCE5EF;
+    --ink: #1D2940;
+    --line: #A9BBCE;
+    --x: #1F45C4;
+    --o: #C8362B;
+    --muted: #56677E;
+    --chip: #E3EAF3;
+    --scrim: rgba(29, 41, 64, .45);
+    --font-hand: "Shantell Sans", "Segoe Print", "Comic Sans MS", cursive;
+    --font-ui: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --paper: #111823;
+      --rule: #1A2432;
+      --ink: #D7E2F0;
+      --line: #3A4B62;
+      --x: #86A7FF;
+      --o: #FF8273;
+      --muted: #94A5BB;
+      --chip: #1D2838;
+      --scrim: rgba(0, 0, 0, .6);
+    }
+  }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-size: 14px;
+    color: var(--ink);
+    font-family: var(--font-ui);
+    background-color: var(--paper);
+    background-image:
+      linear-gradient(var(--rule) 1px, transparent 1px),
+      linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+    background-size: 24px 24px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  [hidden] { display: none !important; }
+  .app {
+    box-sizing: border-box;
+    height: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: max(14px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-family: var(--font-hand); font-weight: 700; font-size: 1.45rem; letter-spacing: -.01em; }
+  .tally { font-size: .9rem; color: var(--muted); font-variant-numeric: tabular-nums; display: flex; gap: 12px; flex-wrap: wrap; }
+  .tally b { font-weight: 700; color: var(--ink); }
+  .tally .tx { color: var(--x); }
+  .tally .to { color: var(--o); }
+
+  .status { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+  .turnmark { width: 44px; height: 44px; flex: none; }
+  .turnmark.X { color: var(--x); }
+  .turnmark.O { color: var(--o); }
+  .turnmark .mark path, .turnmark .mark circle { stroke-width: 11; }
+  .status-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  #headline { font-family: var(--font-hand); font-weight: 700; font-size: 1.3rem; line-height: 1.15; overflow-wrap: anywhere; }
+  #subline { color: var(--muted); font-size: .95rem; }
+
+  .boardwrap { flex: 1; min-height: 220px; display: grid; place-items: center; container-type: size; }
+  .big {
+    position: relative;
+    width: min(100cqw, 100cqh);
+    aspect-ratio: 1;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: clamp(4px, 1.3vw, 6px);
+    background: var(--ink);
+  }
+  .sub {
+    --cellbg: var(--paper);
+    position: relative;
+    background: var(--cellbg);
+    padding: 6%;
+    transition: background-color .2s;
+  }
+  .sub.open { --cellbg: color-mix(in srgb, var(--turn) 14%, var(--paper)); }
+  .grid {
+    height: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 2px;
+    background: var(--line);
+    transition: opacity .3s;
+  }
+  .cell {
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    background: var(--cellbg);
+    color: var(--ink);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background-color .2s;
+  }
+  .cell:disabled { cursor: default; }
+  .cell:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; position: relative; z-index: 1; }
+  .cell.X { color: var(--x); }
+  .cell.O { color: var(--o); }
+  .cell.last { background: color-mix(in srgb, currentColor 16%, var(--cellbg)); }
+  .cell svg { width: 80%; height: 80%; }
+
+  .mark path, .mark circle, .winline line {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 12;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw .24s ease-out forwards;
+  }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  .sub.done .grid { opacity: .25; }
+  .sub.D .grid { opacity: .5; }
+  .claim { position: absolute; inset: 4%; pointer-events: none; }
+  .claim.X { color: var(--x); }
+  .claim.O { color: var(--o); }
+  .claim svg { width: 100%; height: 100%; }
+  .claim .mark path, .claim .mark circle { stroke-width: 9; animation-duration: .4s; }
+
+  .winline { position: absolute; inset: 0; pointer-events: none; }
+  .winline svg { width: 100%; height: 100%; overflow: visible; }
+  .winline line { stroke-width: 2.6; animation-duration: .5s; animation-delay: .3s; }
+  .winline.X { color: var(--x); }
+  .winline.O { color: var(--o); }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; }
+  .seg { display: flex; padding: 3px; border-radius: 999px; background: var(--chip); }
+  .seg button {
+    font: 700 .9rem var(--font-ui);
+    min-height: 40px;
+    padding: 0 13px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+  .actions, .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    font: 700 .92rem var(--font-ui);
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1.5px solid var(--ink);
+    background: transparent;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .btn.primary { background: var(--ink); color: var(--paper); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--x); outline-offset: 2px; }
+
+  .online { display: flex; flex-direction: column; gap: 8px; }
+  .online form { display: flex; gap: 8px; }
+  .online input {
+    width: 7.5em;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1.5px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font: 700 1.05rem var(--font-ui);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+  }
+  .online input::placeholder { letter-spacing: .02em; text-transform: none; color: var(--muted); font-weight: 400; }
+  .gamecode { font-size: .95rem; color: var(--muted); margin-right: auto; }
+  .gamecode b { color: var(--ink); font-size: 1.1rem; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: .55em; height: .55em; border-radius: 50%; background: var(--line); margin-right: .35em; vertical-align: .05em; }
+  .dot.on { background: #2E9E5B; }
+  .msg { margin: 0; font-size: .92rem; line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+  .msg:empty { display: none; }
+  .msg.warn { color: var(--o); }
+
+  .sheet { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: var(--scrim); padding: 16px; }
+  .sheet-card {
+    box-sizing: border-box;
+    width: min(100%, 460px);
+    max-height: 100%;
+    overflow-y: auto;
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 14px;
+    padding: 22px 22px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sheet-card h2 { margin: 0; font-family: var(--font-hand); font-size: 1.35rem; text-wrap: balance; }
+  .sheet-card ul { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 8px; line-height: 1.45; }
+  .sheet-card .btn { align-self: flex-end; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mark path, .mark circle, .winline line { animation: none; stroke-dashoffset: 0; }
+    .sub, .grid, .cell { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Giant Tic-Tac-Toe</h1>
+    <div class="tally" id="tally" aria-label="Score"></div>
+  </header>
+
+  <div class="status" aria-live="polite">
+    <div class="turnmark" id="turnmark"></div>
+    <div class="status-text">
+      <span id="headline">X to play</span>
+      <span id="subline">Play in any grid</span>
+    </div>
+  </div>
+
+  <div class="boardwrap">
+    <div class="big" id="big"></div>
+  </div>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Mode">
+      <button id="mode-two" type="button" aria-pressed="true">2 players</button>
+      <button id="mode-cpu" type="button" aria-pressed="false">vs phone</button>
+      <button id="mode-online" type="button" aria-pressed="false">Online</button>
+    </div>
+    <div class="actions">
+      <button class="btn" id="rules-btn" type="button">Rules</button>
+      <button class="btn" id="undo-btn" type="button">Undo</button>
+      <button class="btn primary" id="new-btn" type="button">New game</button>
+    </div>
+  </div>
+
+  <div class="online" id="online" hidden>
+    <div class="row" id="lobby">
+      <button class="btn primary" id="create-btn" type="button">Start online game</button>
+      <form id="join-form" autocomplete="off">
+        <input id="join-code" name="code" maxlength="4" placeholder="Code" aria-label="Game code" autocapitalize="characters" spellcheck="false">
+        <button class="btn" type="submit">Join</button>
+      </form>
+    </div>
+    <div class="row" id="ingame" hidden>
+      <span class="gamecode"><span class="dot" id="conn-dot"></span>Game <b id="code-label"></b> · <span id="side-label"></span></span>
+      <button class="btn" id="invite-btn" type="button">Invite</button>
+      <button class="btn primary" id="rematch-btn" type="button">Rematch</button>
+      <button class="btn" id="leave-btn" type="button">Leave</button>
+    </div>
+    <p class="msg" id="online-msg" role="status"></p>
+  </div>
+</div>
+
+<div class="sheet" id="rules" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="rules-title">
+    <h2 id="rules-title">How to play</h2>
+    <ul>
+      <li>The board is 9 small tic-tac-toe grids inside one big grid.</li>
+      <li>Get three in a row inside a small grid to win that grid.</li>
+      <li>The square you pick sends your opponent to the matching grid. Play the top-right square of any small grid, and they must play in the top-right grid.</li>
+      <li>If that grid is already won or full, they can play in any open grid.</li>
+      <li>A full small grid with no winner counts for nobody.</li>
+      <li>Win three small grids in a row, across, down or diagonally, to win the game.</li>
+      <li>Online: start a game and send your friend the invite, or type their 4-letter code and tap Join. Whoever started the game keeps it open in their browser. Sides swap on every rematch.</li>
+    </ul>
+    <button class="btn primary" id="rules-close" type="button">Got it</button>
+  </div>
+</div>
+
+<script>
+  const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  const NAMES = ['top-left','top-middle','top-right','middle-left','center','middle-right','bottom-left','bottom-middle','bottom-right'];
+  const SQUARES = ['top-left','top','top-right','left','center','right','bottom-left','bottom','bottom-right'];
+  const KEY = 'giant-ttt-v2';
+  const PEER_PREFIX = 'giant-ttt-7f3a-';
+  const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ';
+  const $ = id => document.getElementById(id);
+
+  let g = fresh();
+  let mode = 'two';
+  let score = { two: { X: 0, O: 0, D: 0 }, cpu: { X: 0, O: 0, D: 0 } };
+  let timer = null;
+
+  // Online: the player who starts a game is the host and keeps the official copy (st).
+  // st = { moves: [0-80...], xRole: 'host'|'guest', wins: { host, guest }, draws }
+  const net = { peer: null, conn: null, role: null, code: null, st: null, connected: false, joinTimer: null, retries: 0 };
+
+  // ---------- rules ----------
+  function fresh() {
+    return { cells: Array(81).fill(null), small: Array(9).fill(null), active: -1, turn: 'X', winner: null, winLine: null, last: -1, moves: [] };
+  }
+  function winOf(arr) {
+    for (const L of LINES) {
+      const v = arr[L[0]];
+      if (v && v !== 'D' && v === arr[L[1]] && v === arr[L[2]]) return { p: v, line: L };
+    }
+    return null;
+  }
+  function legal(s, b, c) {
+    return !s.winner && s.small[b] === null && s.cells[b * 9 + c] === null && (s.active === -1 || s.active === b);
+  }
+  function play(s, b, c) {
+    s.cells[b * 9 + c] = s.turn;
+    s.moves.push([b, c]);
+    s.last = b * 9 + c;
+    const sub = s.cells.slice(b * 9, b * 9 + 9);
+    const w = winOf(sub);
+    if (w) s.small[b] = w.p;
+    else if (sub.every(Boolean)) s.small[b] = 'D';
+    const bw = winOf(s.small);
+    if (bw) { s.winner = bw.p; s.winLine = bw.line; }
+    else if (s.small.every(v => v !== null)) s.winner = 'D';
+    s.active = s.small[c] === null ? c : -1;
+    s.turn = s.turn === 'X' ? 'O' : 'X';
+  }
+  function replay(moves) {
+    const s = fresh();
+    for (const [b, c] of moves) play(s, b, c);
+    return s;
+  }
+  // Online moves are square numbers 0-80. They come from another device, so stop at the first bad one.
+  function replayIdx(list) {
+    const s = fresh();
+    for (const m of Array.isArray(list) ? list : []) {
+      if (!Number.isInteger(m) || m < 0 || m > 80) break;
+      const b = Math.floor(m / 9), c = m % 9;
+      if (!legal(s, b, c)) break;
+      play(s, b, c);
+    }
+    return s;
+  }
+
+  // ---------- phone opponent ----------
+  function clone(s) {
+    return { cells: s.cells.slice(), small: s.small.slice(), active: s.active, turn: s.turn, winner: s.winner, winLine: s.winLine, last: s.last, moves: [] };
+  }
+  function legalMoves(s) {
+    const out = [];
+    for (let b = 0; b < 9; b++) {
+      if (s.small[b] !== null || (s.active !== -1 && s.active !== b)) continue;
+      for (let c = 0; c < 9; c++) if (!s.cells[b * 9 + c]) out.push([b, c]);
+    }
+    return out;
+  }
+  // Would p win small grid b by playing square c?
+  function completes(cells, b, c, p) {
+    return LINES.some(L => L.includes(c) && L.every(i => i === c || cells[b * 9 + i] === p));
+  }
+  function threats(small, p) {
+    return LINES.filter(L => L.filter(i => small[i] === p).length === 2 && L.some(i => small[i] === null)).length;
+  }
+  function botPick(s) {
+    let best = -Infinity, pick = null;
+    for (const [b, c] of legalMoves(s)) {
+      const t = clone(s);
+      play(t, b, c);
+      let sc = 0;
+      if (t.winner === 'O') sc = 10000;
+      else if (!t.winner) {
+        if (t.small[b] === 'O') sc += 30 + 12 * threats(t.small, 'O');
+        if (completes(s.cells, b, c, 'X')) sc += 24;
+        let worst = 0;
+        for (const [ob, oc] of legalMoves(t)) {
+          if (!completes(t.cells, ob, oc, 'X')) continue;
+          const sm = t.small.slice();
+          sm[ob] = 'X';
+          worst = Math.max(worst, winOf(sm) ? 5000 : 30 + 12 * threats(sm, 'X'));
+        }
+        sc -= worst;
+        if (t.active === -1) sc -= 8;
+        sc += c === 4 ? 3 : c % 2 === 0 ? 1.5 : 0;
+        if (b === 4) sc += 1;
+      }
+      sc += Math.random() * 2;
+      if (sc > best) { best = sc; pick = [b, c]; }
+    }
+    return pick;
+  }
+
+  // ---------- drawing ----------
+  function markSVG(p) {
+    if (p === 'X') return '<svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><path pathLength="1" d="M25 23 L77 76"/><path pathLength="1" d="M76 24 L23 77" style="animation-delay:.1s"/></svg>';
+    if (p === 'O') return '<svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><circle pathLength="1" cx="50" cy="50" r="28" transform="rotate(-80 50 50)"/></svg>';
+    return '';
+  }
+
+  const big = $('big');
+  const subs = [], cells = [];
+  for (let b = 0; b < 9; b++) {
+    const sub = document.createElement('div');
+    sub.className = 'sub';
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    for (let c = 0; c < 9; c++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'cell';
+      btn.id = `cell-${b}-${c}`;
+      btn.dataset.v = '';
+      btn.setAttribute('aria-label', `${NAMES[b]} grid, ${SQUARES[c]} square`);
+      btn.addEventListener('click', () => tap(b, c));
+      grid.appendChild(btn);
+      cells.push(btn);
+    }
+    const claim = document.createElement('div');
+    claim.className = 'claim';
+    claim.dataset.v = '';
+    sub.append(grid, claim);
+    big.appendChild(sub);
+    subs.push({ el: sub, claim });
+  }
+  const winline = document.createElement('div');
+  winline.className = 'winline';
+  winline.dataset.v = '';
+  big.appendChild(winline);
+
+  function botTurn() { return mode === 'cpu' && g.turn === 'O' && !g.winner; }
+  function otherRole(r) { return r === 'host' ? 'guest' : 'host'; }
+  function mySide() { return net.st ? (net.st.xRole === net.role ? 'X' : 'O') : null; }
+  function roleOf(mark) { return mark === 'X' ? net.st.xRole : otherRole(net.st.xRole); }
+  function myOnlineTurn() { return mode === 'online' && net.connected && !!net.st && mySide() === g.turn && !g.winner; }
+
+  function whereText() {
+    if (g.active !== -1) return `in the ${NAMES[g.active]} grid`;
+    return g.moves.length ? 'in any open grid' : 'in any grid';
+  }
+  function yourWhere() {
+    return g.active === -1 && g.moves.length ? 'That grid is closed. Play in any open grid.' : 'Play ' + whereText();
+  }
+
+  function statusText() {
+    if (mode === 'online') return onlineStatus();
+    if (g.winner === 'D') return ['Draw', 'Nobody got three grids in a row.'];
+    if (g.winner) {
+      if (mode === 'cpu') return g.winner === 'X' ? ['You win', 'Three grids in a row.'] : ['The phone wins', 'Three grids in a row. Undo or start over.'];
+      return [`${g.winner} wins`, 'Three grids in a row.'];
+    }
+    if (mode === 'cpu') return g.turn === 'X' ? ['Your move', yourWhere()] : ['The phone is thinking…', 'It plays O'];
+    return [`${g.turn} to play`, yourWhere()];
+  }
+
+  function onlineStatus() {
+    if (!net.peer) return ['Play online', 'Start a game, or join one with a 4-letter code.'];
+    if (!net.st) return ['Connecting…', `Joining game ${net.code}.`];
+    if (!net.connected) {
+      return net.role === 'host'
+        ? ['Waiting for your friend', `Send them the invite or code ${net.code}. Keep this page open.`]
+        : ['Reconnecting…', 'Your friend needs to keep the game open.'];
+    }
+    if (g.winner === 'D') return ['Draw', 'Tap Rematch to play again. Sides swap.'];
+    if (g.winner) return g.winner === mySide() ? ['You win', 'Tap Rematch to play again. Sides swap.'] : ['Your friend wins', 'Tap Rematch to play again. Sides swap.'];
+    if (g.turn === mySide()) return ['Your move', yourWhere()];
+    return ['Waiting for your friend', `They play ${whereText()}.`];
+  }
+
+  function render() {
+    const locked = botTurn() || (mode === 'online' && !myOnlineTurn());
+    const showOpen = !g.winner && !botTurn() && (mode !== 'online' || net.connected);
+    big.style.setProperty('--turn', g.turn === 'X' ? 'var(--x)' : 'var(--o)');
+    for (let b = 0; b < 9; b++) {
+      const { el, claim } = subs[b];
+      const won = g.small[b];
+      el.classList.toggle('open', showOpen && won === null && (g.active === -1 || g.active === b));
+      el.classList.toggle('done', won !== null);
+      el.classList.toggle('D', won === 'D');
+      const cv = won === 'X' || won === 'O' ? won : '';
+      if (claim.dataset.v !== cv) {
+        claim.dataset.v = cv;
+        claim.className = 'claim ' + cv;
+        claim.innerHTML = markSVG(cv);
+      }
+    }
+    cells.forEach((btn, i) => {
+      const v = g.cells[i] || '';
+      if (btn.dataset.v !== v) {
+        btn.dataset.v = v;
+        btn.innerHTML = markSVG(v);
+      }
+      btn.className = 'cell' + (v ? ' ' + v : '') + (i === g.last ? ' last' : '');
+      btn.disabled = locked || !legal(g, Math.floor(i / 9), i % 9);
+    });
+
+    const wl = g.winLine && g.winner !== 'D' ? g.winLine.join('') + g.winner : '';
+    if (winline.dataset.v !== wl) {
+      winline.dataset.v = wl;
+      winline.className = 'winline ' + (g.winner || '');
+      if (wl) {
+        const pt = i => [((i % 3) + .5) * 100 / 3, (Math.floor(i / 3) + .5) * 100 / 3];
+        const [x1, y1] = pt(g.winLine[0]), [x2, y2] = pt(g.winLine[2]);
+        const ext = .14, dx = (x2 - x1) * ext, dy = (y2 - y1) * ext;
+        winline.innerHTML = `<svg viewBox="0 0 100 100" aria-hidden="true"><line pathLength="1" x1="${x1 - dx}" y1="${y1 - dy}" x2="${x2 + dx}" y2="${y2 + dy}"/></svg>`;
+      } else winline.innerHTML = '';
+    }
+
+    const [h, s] = statusText();
+    $('headline').textContent = h;
+    $('subline').textContent = s;
+    const hideMark = g.winner === 'D' || (mode === 'online' && !net.connected);
+    const tm = hideMark ? '' : (g.winner || g.turn);
+    const turnmark = $('turnmark');
+    if (turnmark.dataset.v !== tm) {
+      turnmark.dataset.v = tm;
+      turnmark.className = 'turnmark ' + tm;
+      turnmark.innerHTML = markSVG(tm);
+    }
+
+    renderTally();
+
+    $('mode-two').setAttribute('aria-pressed', mode === 'two');
+    $('mode-cpu').setAttribute('aria-pressed', mode === 'cpu');
+    $('mode-online').setAttribute('aria-pressed', mode === 'online');
+    $('undo-btn').hidden = mode === 'online';
+    $('new-btn').hidden = mode === 'online';
+    $('undo-btn').disabled = g.moves.length === 0;
+    renderOnlinePanel();
+  }
+
+  function renderTally() {
+    const t = $('tally');
+    t.textContent = '';
+    const add = (cls, label, n) => {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.append(label + ' ');
+      const b = document.createElement('b');
+      b.textContent = n;
+      span.appendChild(b);
+      t.appendChild(span);
+    };
+    if (mode === 'online') {
+      if (!net.st) return;
+      add('', 'You', net.st.wins[net.role]);
+      add('', 'Friend', net.st.wins[otherRole(net.role)]);
+      add('', 'Draws', net.st.draws);
+      return;
+    }
+    const sc = score[mode];
+    add('tx', mode === 'cpu' ? 'You' : 'X', sc.X);
+    add('to', mode === 'cpu' ? 'Phone' : 'O', sc.O);
+    add('', 'Draws', sc.D);
+  }
+
+  function renderOnlinePanel() {
+    const on = mode === 'online';
+    $('online').hidden = !on;
+    if (!on) return;
+    const inGame = !!net.peer;
+    $('lobby').hidden = inGame;
+    $('ingame').hidden = !inGame;
+    const canUse = typeof window.Peer === 'function';
+    $('create-btn').disabled = !canUse;
+    $('join-code').disabled = !canUse;
+    if (!canUse && !inGame) setMsg('Online play needs an internet connection. Reload the page once you are online.', true);
+    if (inGame) {
+      $('code-label').textContent = net.code;
+      $('conn-dot').classList.toggle('on', net.connected);
+      $('conn-dot').title = net.connected ? 'Friend connected' : 'Friend not connected';
+      const side = mySide();
+      $('side-label').textContent = side ? `you play ${side}` : 'connecting';
+      $('rematch-btn').hidden = !(g.winner && net.connected);
+      $('invite-btn').hidden = net.role !== 'host' || net.connected;
+    }
+  }
+
+  function setMsg(text, warn) {
+    const m = $('online-msg');
+    m.textContent = text || '';
+    m.classList.toggle('warn', !!warn);
+  }
+
+  // ---------- local actions ----------
+  function save() {
+    try {
+      const st = mode === 'online'
+        ? { moves: [], mode, score, code: net.code, role: net.role, st: net.role === 'host' ? net.st : null }
+        : { moves: g.moves, mode, score };
+      localStorage.setItem(KEY, JSON.stringify(st));
+    } catch (e) {}
+  }
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; }
+  }
+  function doMove(b, c) {
+    play(g, b, c);
+    if (g.winner) score[mode][g.winner]++;
+    save();
+    render();
+    if (botTurn()) scheduleBot();
+  }
+  function scheduleBot() {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      const m = botPick(g);
+      if (m) doMove(m[0], m[1]);
+    }, 550);
+  }
+  function tap(b, c) {
+    if (mode === 'online') { onlineMove(b, c); return; }
+    if (botTurn() || !legal(g, b, c)) return;
+    doMove(b, c);
+  }
+  function undo() {
+    clearTimeout(timer);
+    timer = null;
+    if (mode === 'online' || !g.moves.length) return;
+    if (g.winner) score[mode][g.winner] = Math.max(0, score[mode][g.winner] - 1);
+    const moves = g.moves.slice();
+    moves.pop();
+    if (mode === 'cpu') while (moves.length % 2 === 1) moves.pop();
+    g = replay(moves);
+    save();
+    render();
+  }
+  function newGame() {
+    clearTimeout(timer);
+    timer = null;
+    g = fresh();
+    save();
+    render();
+  }
+  function setMode(m) {
+    if (m === mode) return;
+    if (mode === 'online') leaveGame(true);
+    mode = m;
+    clearTimeout(timer);
+    timer = null;
+    g = fresh();
+    setMsg('');
+    save();
+    render();
+  }
+
+  // ---------- online (peer to peer) ----------
+  function makeCode() {
+    let s = '';
+    for (let i = 0; i < 4; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    return s;
+  }
+  function cleanCode(v) {
+    const s = String(v || '').toUpperCase().replace(/[^A-Z]/g, '');
+    return s.length === 4 ? s : null;
+  }
+  function cleanState(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const n = v => (Number.isInteger(v) && v >= 0 ? v : 0);
+    const wins = raw.wins && typeof raw.wins === 'object' ? raw.wins : {};
+    return {
+      moves: Array.isArray(raw.moves) ? raw.moves.filter(Number.isInteger).slice(0, 81) : [],
+      xRole: raw.xRole === 'guest' ? 'guest' : 'host',
+      wins: { host: n(wins.host), guest: n(wins.guest) },
+      draws: n(raw.draws),
+    };
+  }
+  function peerProblem(e) {
+    const t = e && e.type;
+    if (t === 'peer-unavailable') return `No open game with code ${net.code}. Check the code, and make sure your friend still has the game open.`;
+    if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') return "Can't reach the game server. Check your internet connection and try again.";
+    if (t === 'browser-incompatible') return 'This browser does not support online play. Try Chrome.';
+    return 'Something went wrong with the connection. Tap Leave and try again.';
+  }
+  function destroyPeer() {
+    clearTimeout(net.joinTimer);
+    if (net.conn) { try { net.conn.close(); } catch (e) {} }
+    if (net.peer) { try { net.peer.destroy(); } catch (e) {} }
+    net.conn = null;
+    net.peer = null;
+    net.connected = false;
+  }
+
+  function hostGame(code, st) {
+    destroyPeer();
+    net.role = 'host';
+    net.code = code || makeCode();
+    net.st = st || { moves: [], xRole: 'host', wins: { host: 0, guest: 0 }, draws: 0 };
+    g = replayIdx(net.st.moves);
+    const peer = new Peer(PEER_PREFIX + net.code);
+    net.peer = peer;
+    setMsg('Opening your game…');
+    render();
+    peer.on('open', () => {
+      net.retries = 0;
+      setMsg('');
+      save();
+      render();
+    });
+    peer.on('connection', conn => {
+      if (net.conn && net.conn.open) {
+        conn.on('open', () => { conn.send({ t: 'full' }); setTimeout(() => conn.close(), 500); });
+        return;
+      }
+      attach(conn);
+    });
+    peer.on('disconnected', () => { if (net.peer === peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) {} } });
+    peer.on('error', e => {
+      if (net.peer !== peer) return;
+      if (e.type === 'unavailable-id') {
+        // The code is taken, or the server still remembers this page from before a reload.
+        if (code && net.retries < 5) {
+          net.retries++;
+          setMsg('Reopening your game…');
+          setTimeout(() => { if (net.peer === peer) hostGame(code, net.st); }, 3000);
+        } else {
+          net.retries = 0;
+          hostGame(null, null);
+        }
+        return;
+      }
+      setMsg(peerProblem(e), true);
+      render();
+    });
+  }
+
+  function joinGame(raw) {
+    const code = cleanCode(raw);
+    if (!code) { setMsg('A game code is 4 letters, like KTRW.', true); return; }
+    if (typeof window.Peer !== 'function') return;
+    destroyPeer();
+    net.role = 'guest';
+    net.code = code;
+    net.st = null;
+    g = fresh();
+    const peer = new Peer();
+    net.peer = peer;
+    setMsg('');
+    save();
+    render();
+    peer.on('open', () => {
+      if (net.peer !== peer) return;
+      attach(peer.connect(PEER_PREFIX + code, { reliable: true }));
+      net.joinTimer = setTimeout(() => {
+        if (net.peer === peer && !net.connected) setMsg(`Still trying to reach game ${code}. Some mobile networks block direct connections; try Wi-Fi on both phones.`, true);
+      }, 15000);
+    });
+    peer.on('disconnected', () => { if (net.peer === peer && !peer.destroyed) { try { peer.reconnect(); } catch (e) {} } });
+    peer.on('error', e => {
+      if (net.peer !== peer) return;
+      setMsg(peerProblem(e), true);
+      render();
+    });
+  }
+
+  function attach(conn) {
+    net.conn = conn;
+    conn.on('open', () => {
+      if (net.conn !== conn) return;
+      clearTimeout(net.joinTimer);
+      net.connected = true;
+      if (net.role === 'host') conn.send({ t: 'sync', st: net.st });
+      setMsg('');
+      render();
+    });
+    conn.on('data', msg => { if (net.conn === conn) onData(msg); });
+    conn.on('close', () => {
+      if (net.conn !== conn) return;
+      net.connected = false;
+      net.conn = null;
+      if (net.role === 'host') setMsg('Your friend left. They can rejoin with the same invite.', true);
+      else setMsg('Lost the connection to your friend. Tap Leave, then Join again with the code.', true);
+      render();
+    });
+    conn.on('error', () => {});
+  }
+
+  function send(msg) {
+    if (net.conn && net.conn.open) net.conn.send(msg);
+  }
+
+  function onData(msg) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.t === 'full' && net.role === 'guest') {
+      leaveGame(true);
+      setMsg('That game already has two players.', true);
+      render();
+      return;
+    }
+    if (msg.t === 'sync' && net.role === 'guest') {
+      const st = cleanState(msg.st);
+      if (!st) return;
+      net.st = st;
+      g = replayIdx(st.moves);
+      render();
+      return;
+    }
+    if (!net.st) return;
+    if (msg.t === 'move') {
+      const m = msg.m;
+      const theirs = mySide() === 'X' ? 'O' : 'X';
+      const ok = Number.isInteger(m) && m >= 0 && m <= 80 && g.turn === theirs && legal(g, Math.floor(m / 9), m % 9);
+      if (!ok) {
+        // Out of step. The host's copy wins.
+        if (net.role === 'host') send({ t: 'sync', st: net.st });
+        return;
+      }
+      applyMove(m);
+      return;
+    }
+    if (msg.t === 'rematch') {
+      const xRole = msg.xRole === 'guest' ? 'guest' : 'host';
+      if (g.winner) startRematch(xRole);
+    }
+  }
+
+  function applyMove(m) {
+    net.st.moves.push(m);
+    g = replayIdx(net.st.moves);
+    if (g.winner === 'D') net.st.draws++;
+    else if (g.winner) net.st.wins[roleOf(g.winner)]++;
+    save();
+    render();
+  }
+
+  function onlineMove(b, c) {
+    if (!myOnlineTurn() || !legal(g, b, c)) return;
+    const m = b * 9 + c;
+    applyMove(m);
+    send({ t: 'move', m });
+  }
+
+  function startRematch(xRole) {
+    net.st.moves = [];
+    net.st.xRole = xRole;
+    g = fresh();
+    save();
+    render();
+  }
+  function rematch() {
+    if (!net.st || !g.winner || !net.connected) return;
+    // Both players may tap at once. Sending the new X side makes the two taps agree.
+    const xRole = otherRole(net.st.xRole);
+    startRematch(xRole);
+    send({ t: 'rematch', xRole });
+  }
+
+  function leaveGame(quiet) {
+    destroyPeer();
+    net.role = null;
+    net.code = null;
+    net.st = null;
+    g = fresh();
+    if (!quiet) { setMsg(''); save(); render(); }
+  }
+
+  async function invite() {
+    const link = location.origin + location.pathname + '#' + net.code;
+    const text = `Play Giant Tic-Tac-Toe with me. Game code ${net.code}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Giant Tic-Tac-Toe', text, url: link }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}: ${link}`);
+      setMsg('Invite link copied. Paste it to your friend.');
+    } catch (e) {
+      setMsg(`Send your friend this link: ${link}`);
+    }
+  }
+
+  // ---------- wiring ----------
+  $('undo-btn').addEventListener('click', undo);
+  $('new-btn').addEventListener('click', newGame);
+  $('mode-two').addEventListener('click', () => setMode('two'));
+  $('mode-cpu').addEventListener('click', () => setMode('cpu'));
+  $('mode-online').addEventListener('click', () => setMode('online'));
+  $('create-btn').addEventListener('click', () => { if (typeof window.Peer === 'function') hostGame(null, null); });
+  $('join-form').addEventListener('submit', e => { e.preventDefault(); joinGame($('join-code').value); });
+  $('invite-btn').addEventListener('click', invite);
+  $('rematch-btn').addEventListener('click', rematch);
+  $('leave-btn').addEventListener('click', () => leaveGame(false));
+  $('rules-btn').addEventListener('click', () => { $('rules').hidden = false; $('rules-close').focus(); });
+  $('rules-close').addEventListener('click', () => { $('rules').hidden = true; $('rules-btn').focus(); });
+  $('rules').addEventListener('click', e => { if (e.target === $('rules')) $('rules').hidden = true; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') $('rules').hidden = true; });
+  window.addEventListener('pagehide', () => { if (net.peer) { try { net.peer.destroy(); } catch (e) {} } });
+
+  function start() {
+    const d = load();
+    let resume = null;
+    if (d && Array.isArray(d.moves)) {
+      mode = d.mode === 'cpu' || d.mode === 'online' ? d.mode : 'two';
+      if (d.score && d.score.two && d.score.cpu) score = d.score;
+      if (mode === 'online') resume = { code: cleanCode(d.code), role: d.role, st: cleanState(d.st) };
+      else {
+        try { g = replay(d.moves); } catch (e) { g = fresh(); }
+      }
+    }
+    const hashCode = cleanCode(location.hash.slice(1));
+    const peerOk = typeof window.Peer === 'function';
+    if (hashCode) {
+      history.replaceState(null, '', location.pathname + location.search);
+      mode = 'online';
+      g = fresh();
+      if (peerOk) {
+        if (resume && resume.role === 'host' && resume.code === hashCode) hostGame(hashCode, resume.st);
+        else joinGame(hashCode);
+      }
+    } else if (mode === 'online' && resume && resume.code && peerOk) {
+      if (resume.role === 'host') hostGame(resume.code, resume.st);
+      else joinGame(resume.code);
+    }
+    render();
+    if (botTurn()) scheduleBot();
+  }
+  start();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
+</script>
+</body>
+</html>
